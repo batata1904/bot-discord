@@ -20,6 +20,7 @@ const cargoPermitido = "Nobreza";
 
 client.once(Events.ClientReady, () => {
     console.log(`BOT ONLINE: ${client.user.tag}`);
+    console.log(`Total de canais: ${client.channels.cache.size}`);
 });
 
 client.on(Events.MessageCreate, async message => {
@@ -29,50 +30,48 @@ client.on(Events.MessageCreate, async message => {
     const comando = args.shift().toLowerCase();
 
     if (comando === 'clearuser') {
-        console.log(`[COMANDO] ${message.author.tag} usou !clearuser em #${message.channel.name}`);
+        console.log(`[COMANDO] ${message.author.tag} usou !clearuser`);
 
-        // PERMISSÃO DO USUÁRIO
+        // PERMISSÃO
         const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
         const temCargo = message.member.roles.cache.some(r => r.name === cargoPermitido);
-        if (!isAdmin && !temCargo) {
-            console.log(`[ERRO] Usuário sem permissão`);
-            return message.reply('❌ Apenas Admins ou Nobreza!');
-        }
+        if (!isAdmin && !temCargo) return message.reply('❌ Apenas Admins ou Nobreza!');
 
         const user = message.mentions.members.first();
-        if (!user) {
-            console.log(`[ERRO] Usuário não marcado`);
-            return message.reply('❌ Marca um usuário!');
-        }
+        if (!user) return message.reply('❌ Marca um usuário!');
 
         const [dia, mes, ano] = args[1].split('-');
         const [hora, min] = args[2].split(':');
         const dataInicio = new Date(`${ano}-${mes}-${dia}T${hora}:${min}:00`);
-        if (isNaN(dataInicio.getTime())) {
-            console.log(`[ERRO] Data inválida: ${args[1]} ${args[2]}`);
-            return message.reply('❌ Data inválida! Use: `31-10-2025 12:00`');
-        }
-
-        console.log(`[INICIANDO] Apagando mensagens de ${user.user.tag} desde ${dataInicio.toLocaleString('pt-PT')}`);
+        if (isNaN(dataInicio.getTime())) return message.reply('❌ Data inválida!');
 
         let total = 0;
-        const statusMsg = await message.channel.send(`Apagando mensagens de **${user.displayName}**...`);
+        const statusMsg = await message.channel.send(`Iniciando varredura em **TODOS os canais**...`);
 
         try {
-            for (const canal of message.guild.channels.cache.values()) {
-                if (canal.type !== 0) continue;
+            const canaisTexto = message.guild.channels.cache.filter(c => c.type === 0);
+            console.log(`[CANAL] Total de canais de texto: ${canaisTexto.size}`);
+
+            for (const canal of canaisTexto.values()) {
+                console.log(`[VERIFICANDO] #${canal.name} (ID: ${canal.id})`);
 
                 const perms = canal.permissionsFor(client.user);
-                if (!perms?.has(['ViewChannel', 'ReadMessageHistory', 'ManageMessages'])) {
-                    console.log(`[IGNORADO] #${canal.name} - sem permissão`);
+                if (!perms?.has('ViewChannel')) {
+                    console.log(`[PULADO] #${canal.name} - sem ViewChannel`);
+                    continue;
+                }
+                if (!perms?.has('ReadMessageHistory')) {
+                    console.log(`[PULADO] #${canal.name} - sem ReadMessageHistory`);
+                    continue;
+                }
+                if (!perms?.has('ManageMessages')) {
+                    console.log(`[PULADO] #${canal.name} - sem ManageMessages`);
                     continue;
                 }
 
-                console.log(`[VERIFICANDO] #${canal.name}`);
                 await statusMsg.edit(`Verificando **#${canal.name}**...`);
 
                 let ultimaId;
-                let encontrou = false;
                 while (true) {
                     const opcoes = { limit: 50 };
                     if (ultimaId) opcoes.before = ultimaId;
@@ -89,7 +88,6 @@ client.on(Events.MessageCreate, async message => {
                     );
 
                     if (paraApagar.size > 0) {
-                        encontrou = true;
                         const apagadas = await canal.bulkDelete(paraApagar, true).catch(err => {
                             console.log(`[ERRO APAGAR] #${canal.name}: ${err.message}`);
                             return null;
@@ -104,17 +102,13 @@ client.on(Events.MessageCreate, async message => {
                     ultimaId = msgs.last().id;
                     await new Promise(r => setTimeout(r, 1200));
                 }
-
-                if (encontrou) console.log(`[APAGADO] ${total} em #${canal.name}`);
             }
 
-            if (total === 0) {
-                statusMsg.edit(`Nenhuma mensagem encontrada.`);
-                console.log(`[ZERO] Nenhuma mensagem apagada`);
-            } else {
-                statusMsg.edit(`Apaguei **${total} mensagens** de ${user}!`);
-                console.log(`[SUCESSO] Apaguei ${total} mensagens`);
-            }
+            statusMsg.edit(total === 0 
+                ? `Nenhuma mensagem encontrada.`
+                : `**Concluído!** Apaguei **${total} mensagens** de ${user} em **todos os canais**!`
+            );
+            console.log(`[SUCESSO] Apaguei ${total} mensagens`);
         } catch (err) {
             statusMsg.edit(`Erro: ${err.message}`);
             console.error(`[ERRO FATAL] ${err}`);
@@ -122,6 +116,4 @@ client.on(Events.MessageCreate, async message => {
     }
 });
 
-client.login(process.env.DISCORD_TOKEN).catch(err => {
-    console.error(`[LOGIN ERRO] ${err.message}`);
-});
+client.login(process.env.DISCORD_TOKEN);
